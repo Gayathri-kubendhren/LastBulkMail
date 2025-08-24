@@ -1,67 +1,60 @@
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect("mongodb://127.0.0.1:27017/passkey").then(function(){
-  console.log("Connected to Db")
-}).catch(function(){
-  console.log("Failed to connect")
-})
+// ✅ Use environment variable for MongoDB connection
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("Connected to DB"))
+  .catch(err => console.error("Failed to connect", err));
 
-const credential = mongoose.model("credential",{},"bulkmail")
+const credential = mongoose.model("credential", {}, "bulkmail");
 
-
-
-
-app.post("/sendMail", function (req, res) {
-  const msg = req.body.msg;
-  const emailList = req.body.emailList;
-
-  credential.find().then(function(data){
-  
-  const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: data[0].toJSON().user,
-    pass: data[0].toJSON().pass,  // Be careful sharing this!
-  },
+// ✅ Root route so opening Render URL doesn’t show Not Found
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
 });
 
-new Promise(async function (resolve, reject) {
-    try {
-      for (let i = 0; i < emailList.length; i++) {
-        await transporter.sendMail({
-          from: "gk4113611@gmail.com",
-          to: emailList[i],
-          subject: "A message from Bulk Mail App",
-          text: msg,
-        });
-        console.log("Email sent to: " + emailList[i]);
-      }
-      resolve("Success");
-    } catch (error) {
-      console.error("Error:", error);
-      reject("Failed");
+app.post("/sendMail", async (req, res) => {
+  const { msg, emailList } = req.body;
+
+  try {
+    const data = await credential.find();
+    if (!data || data.length === 0) {
+      return res.status(500).json({ error: "No credentials found in DB" });
     }
-  })
-    .then(function () {
-      res.send(true);
-    })
-    .catch(function () {
-      res.send(false);
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: data[0].toJSON().user,
+        pass: data[0].toJSON().pass,
+      },
     });
 
-}).catch(function(error){
-  console.log(error)
-})
+    for (let email of emailList) {
+      await transporter.sendMail({
+        from: data[0].toJSON().user,
+        to: email,
+        subject: "A message from Bulk Mail App",
+        text: msg,
+      });
+      console.log("Email sent to:", email);
+    }
 
-  
+    res.send(true);
+  } catch (error) {
+    console.error("Error:", error);
+    res.send(false);
+  }
 });
 
-app.listen(5000, function () {
-  console.log("Server Started...");
+// ✅ Use Render’s port
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server Started on port ${PORT}`);
 });
